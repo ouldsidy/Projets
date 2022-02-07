@@ -1,0 +1,295 @@
+---
+title: "Projet GLM"
+author: "AHMEDOU SALEM Abdoul"
+date: "12/13/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Objectif 
+
+L’objectif de ce travail est d’étudier des données sur les conditions météorologiques à Bale (Suisse) entre 2010 et 2018  et de prédire sur pleuvra le lendemain. Dans un premier temps je ferai l'étude en considérant toutes les variables, puis choisir d'autres modèles pour 
+trouver celui qui prédit le mieux.
+
+## Importation des données
+```{r cars}
+meteo_train = read.table("meteo.train.csv",header=TRUE, sep=",", dec=".")
+
+```
+```{r}
+meteo_train <- meteo_train[,c(7:47)]
+```
+## Modélisation et évolution statistique du modèle
+
+On crée un vecteur de booléens, tirés aléatoirement où les valeurs TRUE correspondent aux individus de ma base d'entraînement et les valeurs FALSE correspondent aux individus de la base de test.
+
+```{r}
+
+train0 = sample(c(T, F), nrow(meteo_train), replace = T, prob = c(.8, .2))
+
+```
+
+
+```{r}
+modele = glm(pluie.demain ~ ., data = meteo_train[train0, ], family = binomial)
+```
+
+Je compare le modèle que j'ai induit à partir des données et le "pire" modèle possibles (où je n'ai pas de variables explicatives)
+
+```{r}
+#R2 McFadden
+LLa<- modele$deviance/(-2)
+LL0<- modele$null.deviance/(-2)
+
+R2MF<-1.0-LLa/LL0
+
+R2MF
+
+```
+```{r}
+#chi2 du rapport de vraisemblance
+chi2<-modele$null.deviance - modele$deviance
+chi2
+```
+```{r}
+#ddl- degré de liberté
+ddl<-modele$df.null - modele$df.residual
+ddl
+```
+```{r}
+#pvalue
+pvalue<-pchisq(chi2,ddl,lower.tail = FALSE)
+pvalue
+```
+Le p-value est très faible (inferieur à 5 %), on je rejette l'hypothèse nulle. Mon modèle fait mieux que le modèle par défaut (celui sans les variables explicatives). 
+
+
+## Évaluation prédictive du modèle
+
+J'effectue une première prédiction, uniquement sur la base de test, tout en conservant toutes les variables explicatives.
+
+```{r}
+ pred3 = predict(modele, meteo_train[!train0, ], type = "response")
+head(pred3)
+```
+
+```{r}
+# et on évalue l'erreur de prédiction
+mean(abs(pred3 - meteo_train[!train0, "pluie.demain"]), na.rm = T)
+```
+Le taux d'erreur est de 34,77 %.
+
+```{r}
+table(meteo_train[!train0, "pluie.demain"], pred3>.5)
+mean(meteo_train[!train0 , "pluie.demain"] == (pred3>.5), na.rm=T)
+```
+J'ai un modèle avec prédiction de 74% de bonnes reponses.
+
+
+## Selection de variables "backward" AIC
+
+On applique le critère AIC au modèle complet avec toutes les variables, pour ensuite selectionner les variables les plus significatives pour la construction du modèle.
+```{r}
+library(MASS)
+#processus de sélection backward
+modele.backward_AIC<-stepAIC(modele, data=meteo_train, direction="backward")
+```
+
+Dans le modèle de base, l'AIC = 1064 et celui du modèle final proposé avec beaucoup moins de variables explicatives l'AIC est plus faible (AIC=1028,26). 
+
+
+```{r}
+summary(modele.backward_AIC)
+```
+
+J'ai un nouveau modèle seulement avec les variables selectionnées, à partir du critère de l'AIC :
+
+
+```{r}
+ modele2 =glm(formula = pluie.demain ~ Temperature.daily.mean..2.m.above.gnd. + 
+    Mean.Sea.Level.Pressure.daily.mean..MSL. + Medium.Cloud.Cover.daily.mean..mid.cld.lay. + 
+    Wind.Speed.daily.mean..80.m.above.gnd. + Wind.Direction.daily.mean..80.m.above.gnd. + 
+    Wind.Direction.daily.mean..900.mb. + Temperature.daily.min..2.m.above.gnd. + 
+    Mean.Sea.Level.Pressure.daily.max..MSL. + Mean.Sea.Level.Pressure.daily.min..MSL. + 
+    Total.Cloud.Cover.daily.min..sfc. + Medium.Cloud.Cover.daily.max..mid.cld.lay. + 
+    Medium.Cloud.Cover.daily.min..mid.cld.lay. + Low.Cloud.Cover.daily.max..low.cld.lay. + 
+    Wind.Speed.daily.max..10.m.above.gnd. + Wind.Speed.daily.min..10.m.above.gnd. + 
+    Wind.Gust.daily.max..sfc., family = binomial, data = meteo_train[train0, 
+    ])
+summary(modele2)
+```
+
+On effectue une prédiction,sur ce modele :
+
+```{r}
+pred4 = predict(modele2, meteo_train[!train0, ], type = "response")
+mean(abs(pred3 - meteo_train[!train0, "pluie.demain"]), na.rm = T)
+```
+
+L’erreur de prédiction est de 34,77 %, pratiquement le même avec le modèle avec toutes les variables.
+
+
+```{r}
+# Erreur 0-1
+table(meteo_train[!train0, "pluie.demain"], pred4>.5)
+mean(meteo_train[!train0 , "pluie.demain"] == (pred4>.5), na.rm=T)
+```
+
+Et le pourcentage de prédiction est de 74,39 %. Le modèle n'a quasiment pas été amélioré.
+
+
+## Selection de variables, "backward" BIC
+On applique le critère BIC au modèle complet avec toutes les variables :
+```{r}
+modele.backward_BIC <- stepAIC(modele, data=meteo_train[train0, ], direction="backward", k= log(nrow(meteo_train[ train0, ])))
+```
+
+```{r}
+summary(modele.backward_BIC)
+```
+
+
+```{r}
+modele3 =glm(formula = pluie.demain ~ Temperature.daily.mean..2.m.above.gnd. + 
+    Mean.Sea.Level.Pressure.daily.mean..MSL. + Medium.Cloud.Cover.daily.mean..mid.cld.lay. + 
+    Wind.Direction.daily.mean..900.mb. + Mean.Sea.Level.Pressure.daily.max..MSL. + 
+    Mean.Sea.Level.Pressure.daily.min..MSL. + Medium.Cloud.Cover.daily.max..mid.cld.lay. + 
+    Wind.Speed.daily.max..10.m.above.gnd., family = binomial, 
+    data = meteo_train[train0, ])
+summary(modele3)
+```
+
+```{r}
+pred5 = predict(modele3, meteo_train[!train0, ], type = "response")
+mean(abs(pred5 - meteo_train[!train0, "pluie.demain"]), na.rm = T)
+```
+
+l'erreur de prédiction est de 36,85 %.(supperieur à celui de l'AIC)
+```{r}
+# Erreur 0-1
+table(meteo_train[!train0, "pluie.demain"], pred5>.5)
+mean(meteo_train[!train0 , "pluie.demain"] == (pred5>.5), na.rm=T)
+```
+73,75%  de bonnes réponses.
+
+
+
+# Validation croisée k-fold
+
+```{r}
+k = 10
+index = sample(1:k, nrow(meteo_train), replace=T)
+res.logistique = rep(NA, k)
+res.probit = rep(NA, k)
+
+for(i in 1:k){
+  reg.logistique =glm(formula = pluie.demain ~ Temperature.daily.mean..2.m.above.gnd. + 
+    Mean.Sea.Level.Pressure.daily.mean..MSL. + Medium.Cloud.Cover.daily.mean..mid.cld.lay. + 
+    Wind.Speed.daily.mean..80.m.above.gnd. + Wind.Direction.daily.mean..80.m.above.gnd. + 
+    Wind.Direction.daily.mean..900.mb. + Temperature.daily.min..2.m.above.gnd. + 
+    Mean.Sea.Level.Pressure.daily.max..MSL. + Mean.Sea.Level.Pressure.daily.min..MSL. + 
+    Total.Cloud.Cover.daily.min..sfc. + Medium.Cloud.Cover.daily.max..mid.cld.lay. + 
+    Medium.Cloud.Cover.daily.min..mid.cld.lay. + Low.Cloud.Cover.daily.max..low.cld.lay. + 
+    Wind.Speed.daily.max..10.m.above.gnd. + Wind.Speed.daily.min..10.m.above.gnd. + 
+    Wind.Gust.daily.max..sfc., family = binomial,
+    data = meteo_train[index != i, ])
+  
+  
+  reg.probit = glm(formula = pluie.demain ~ Temperature.daily.mean..2.m.above.gnd. + 
+    Mean.Sea.Level.Pressure.daily.mean..MSL. + Medium.Cloud.Cover.daily.mean..mid.cld.lay. + 
+    Wind.Speed.daily.mean..80.m.above.gnd. + Wind.Direction.daily.mean..80.m.above.gnd. + 
+    Wind.Direction.daily.mean..900.mb. + Temperature.daily.min..2.m.above.gnd. + 
+    Mean.Sea.Level.Pressure.daily.max..MSL. + Mean.Sea.Level.Pressure.daily.min..MSL. + 
+    Total.Cloud.Cover.daily.min..sfc. + Medium.Cloud.Cover.daily.max..mid.cld.lay. + 
+    Medium.Cloud.Cover.daily.min..mid.cld.lay. + Low.Cloud.Cover.daily.max..low.cld.lay. + 
+    Wind.Speed.daily.max..10.m.above.gnd. + Wind.Speed.daily.min..10.m.above.gnd. + 
+    Wind.Gust.daily.max..sfc., family = binomial(link="probit"),
+    data = meteo_train[index != i, ]
+  )
+  
+  pred.logistique = predict(reg.logistique, newdata=meteo_train[index == i, ],
+                            type="response")
+  pred.probit = predict(reg.probit, newdata=meteo_train[index == i, ],
+                            type="response")
+  
+  res.logistique[i] = mean(meteo_train[index==i, "pluie.demain"] == (pred.logistique >.5), na.rm = T)
+  res.probit[i] = mean(meteo_train[index==i, "pluie.demain"] == (pred.probit >.5), na.rm = T)
+  
+}
+
+mean(res.logistique)
+mean(res.probit)
+```
+
+Avec la régression logistique, j'ai 73,5 % de bonnes réponses et avec ma régression probit, j'ai 73,77 % de bonnes réponses. On peut légèrement préférer la régression probit.
+
+## Prédiction finale
+
+Pour la prédiction des données du modèle de test final, j'utilise le modèle avec une prédiction d'environ 75% de bonnes réponses (modèle 2). Ce modèle pourrait être amélioré en créant une fonction qui tiendrait compte des interactions entre les variables explicatives.
+```{r}
+meteo_test = read.table("meteo.test.csv",header=TRUE, sep=",", dec=".")
+
+```
+
+
+```{r}
+probab = predict(modele2, newdata =  meteo_test, type = "response")
+head(probab, n=5)
+```
+
+
+```{r pressure, echo=FALSE}
+
+pred31<-factor(ifelse(probab > 0.5, "TRUE", "FALSE"))
+
+table(pred31)
+```
+
+```{r}
+#predict(modele2, meteo_test)
+pluie.demain=rep(NA, nrow(meteo_test))
+for (i in 1:nrow(meteo_test)) {
+  P=predict(modele2, newdata = meteo_test[i,], type = "response")
+  if(P <= 0.5){
+    pluie.demain[i]=0
+  }
+  else{
+    pluie.demain[i]=1
+  }
+}
+
+```
+
+```{r}
+pluie.demain = round(predict(modele2, newdata = meteo_test, type = "response"))
+
+head(pluie.demain, n=10)                 
+
+```
+
+```{r}
+date <- meteo_test[,c(2:4)]
+```
+
+
+## Fichier final de prédiction.
+
+```{r}
+données_préduction <- data.frame(date, pluie.demain)
+
+write.csv(données_préduction, "PrevisionMeteo.csv", row.names = FALSE)
+
+```
+
+
+
+
+
+
+
+
